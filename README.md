@@ -1,4 +1,5 @@
 # ⚡ Hijack! Chess
+## The Soul Capture Chess
 
 An online multiplayer chess variant where captured pieces **change color** instead of being removed from the board!
 
@@ -153,3 +154,4 @@ Contributions welcome! Feel free to:
 ---
 
 **Enjoy playing ⚡Hijack! Chess!** ⚡♟️
+
