@@ -1,15 +1,8 @@
 # ⚡ Hijack! Chess
-## The Soul Capture Chess
 
 An online multiplayer chess variant where captured pieces **change color** instead of being removed from the board!
 
 [![Play Now](https://img.shields.io/badge/Play-Online-success?style=for-the-badge)](https://hijack.onrender.com)
-
-> **⚠️ Note on Loading Speed:**
-> This project is hosted on **Render's free tier**. The server spins down after periods of inactivity to save resources.
->
-> If the link doesn't load immediately, please allow about **50-60 seconds** for the server to wake up. Thank you for your patience!
-
 
 ## 🎮 Game Rules
 
@@ -160,5 +153,3 @@ Contributions welcome! Feel free to:
 ---
 
 **Enjoy playing ⚡Hijack! Chess!** ⚡♟️
-
-

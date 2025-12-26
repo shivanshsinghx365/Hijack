@@ -2034,7 +2034,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const boardCopy = board.map(row => row.map(piece => piece ? {...piece} : null));
         gameHistory.push({
             board: boardCopy,
-            lastMove: gameState.lastMove ? {...gameState.lastMove} : null
+            lastMove: gameState.lastMove ? {...gameState.lastMove} : null,
+            kingInCheck: {
+                [COLORS.WHITE]: gameState.kingInCheck[COLORS.WHITE],
+                [COLORS.BLACK]: gameState.kingInCheck[COLORS.BLACK]
+            }
         });
     }
 
@@ -2050,6 +2054,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Restore board
         board = state.board.map(row => row.map(piece => piece ? {...piece} : null));
         gameState.lastMove = state.lastMove ? {...state.lastMove} : null;
+        
+        // Restore check state
+        if (state.kingInCheck) {
+            gameState.kingInCheck[COLORS.WHITE] = state.kingInCheck[COLORS.WHITE];
+            gameState.kingInCheck[COLORS.BLACK] = state.kingInCheck[COLORS.BLACK];
+        } else {
+            // Fallback for older history entries
+            gameState.kingInCheck[COLORS.WHITE] = false;
+            gameState.kingInCheck[COLORS.BLACK] = false;
+        }
         
         renderBoard();
         updateNavigationButtons();
