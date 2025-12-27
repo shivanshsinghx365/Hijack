@@ -27,10 +27,13 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hijack
 let db;
 let analytics = {
     uniqueVisitors: 0,
-    totalVisits: 0,
+    totalVisits: 0, // Cumulative unique visitors over all time
     peakConcurrent: 0,
     currentOnline: 0
 };
+
+// Track active sessions (socketId -> fingerprint mapping)
+const activeSessions = new Map();
 
 // Connect to MongoDB
 MongoClient.connect(MONGODB_URI)
@@ -48,13 +51,25 @@ MongoClient.connect(MONGODB_URI)
 async function loadAnalytics() {
     if (!db) return;
     try {
+        // Create indexes for better performance
+        await db.collection('visitors').createIndex({ fingerprint: 1 });
+        await db.collection('sessions').createIndex({ lastSeen: 1 }, { expireAfterSeconds: 3600 }); // Auto-delete after 1 hour
+        
         const stats = await db.collection('analytics').findOne({ _id: 'stats' });
         if (stats) {
             analytics.uniqueVisitors = stats.uniqueVisitors || 0;
             analytics.totalVisits = stats.totalVisits || 0;
             analytics.peakConcurrent = stats.peakConcurrent || 0;
         }
-        analytics.currentOnline = 0; // Reset on server start
+        
+        // Calculate current online from active sessions (sessions updated in last 5 minutes)
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const activeSessions = await db.collection('sessions').countDocuments({
+            lastSeen: { $gte: fiveMinutesAgo }
+        });
+        analytics.currentOnline = activeSessions;
+        
+        console.log('Analytics loaded:', analytics);
     } catch (err) {
         console.error('Error loading analytics:', err);
     }
@@ -71,7 +86,6 @@ async function saveAnalytics() {
                     uniqueVisitors: analytics.uniqueVisitors,
                     totalVisits: analytics.totalVisits,
                     peakConcurrent: analytics.peakConcurrent,
-                    currentOnline: analytics.currentOnline,
                     lastUpdated: new Date()
                 }
             },
@@ -79,6 +93,35 @@ async function saveAnalytics() {
         );
     } catch (err) {
         console.error('Error saving analytics:', err);
+    }
+}
+
+// Update session activity
+async function updateSession(socketId, fingerprint) {
+    if (!db) return;
+    try {
+        await db.collection('sessions').updateOne(
+            { socketId },
+            { 
+                $set: {
+                    fingerprint,
+                    lastSeen: new Date()
+                }
+            },
+            { upsert: true }
+        );
+    } catch (err) {
+        console.error('Error updating session:', err);
+    }
+}
+
+// Remove session from database
+async function removeSession(socketId) {
+    if (!db) return;
+    try {
+        await db.collection('sessions').deleteOne({ socketId });
+    } catch (err) {
+        console.error('Error removing session:', err);
     }
 }
 
@@ -142,25 +185,31 @@ io.on('connection', (socket) => {
     socket.emit('requestFingerprint');
     
     socket.on('fingerprint', async (fingerprint) => {
-        // Check if unique visitor
+        // Store session mapping
+        activeSessions.set(socket.id, fingerprint);
+        
+        // Check if this is a first-time visitor
         const isUnique = await isUniqueVisitor(fingerprint);
         
         if (isUnique) {
+            // New unique visitor - increment both counters
             analytics.uniqueVisitors++;
+            analytics.totalVisits++; // totalVisits = cumulative unique visitors
+            await saveAnalytics();
         }
         
-        // Increment counters
-        analytics.totalVisits++;
+        // Update current online count
         analytics.currentOnline++;
         
         // Update peak if needed
         if (analytics.currentOnline > analytics.peakConcurrent) {
             analytics.peakConcurrent = analytics.currentOnline;
+            await saveAnalytics();
         }
         
-        // Record visitor
+        // Record visitor and update session
         await recordVisitor(fingerprint, socket.id);
-        await saveAnalytics();
+        await updateSession(socket.id, fingerprint);
         
         // Broadcast updated stats to all clients
         io.emit('analyticsUpdate', analytics);
@@ -371,7 +420,7 @@ io.on('connection', (socket) => {
         socket.leave(roomId);
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log('User disconnected:', socket.id);
         
         // Remove from matchmaking queue if present
@@ -381,9 +430,12 @@ io.on('connection', (socket) => {
             console.log(`${socket.id} removed from matchmaking queue on disconnect`);
         }
         
+        // Remove session from active sessions
+        activeSessions.delete(socket.id);
+        await removeSession(socket.id);
+        
         // Decrement online counter
         analytics.currentOnline = Math.max(0, analytics.currentOnline - 1);
-        saveAnalytics();
         
         // Broadcast updated stats
         io.emit('analyticsUpdate', analytics);
